@@ -1,0 +1,13 @@
+syntax = "proto3";
+option go_package="./;model";
+package response;
+
+// 通用奖励消息
+message GeneralReward {
+  int32 code = 1;
+  string msg = 2;
+  map<uint32, uint64> changes = 3; // 客户端展示奖励的部分 : 道具ID -> 道具数量
+  map<uint32, uint64> balance = 4; // 道具有变化部分的当前余额 : 道具ID -> 道具数量
+  map<uint32, uint64> counter = 5; // 计数器当前值 : counterType -> 计数
+  string ext = 6; // 扩展字段，IAP使用
+}
