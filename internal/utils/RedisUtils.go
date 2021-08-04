@@ -26,6 +26,13 @@ func InitClient() error {
 	return nil
 }
 
+func GetRedisClient() *redis.Client {
+	if rdb == nil {
+		InitClient()
+	}
+	return rdb
+}
+
 func StringPush(key string, value string, outTime time.Duration) error {
 	err := rdb.Set(key, value, outTime).Err()
 	if err != nil {

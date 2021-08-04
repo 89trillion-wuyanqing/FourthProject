@@ -6,10 +6,10 @@ import (
 	utils2 "ThirdProject/internal/utils"
 	"context"
 	"encoding/json"
-	"errors"
+	"github.com/go-redis/redis"
+
 	"github.com/golang/protobuf/proto"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 
 	"time"
@@ -18,243 +18,94 @@ import (
 type GiftCodeshandler struct {
 }
 
-func (this *GiftCodeshandler) CreateGiftCodes(giftCodes *model.GiftCodes) (bool, error) {
+/**
+创建礼品码业务处理
+*/
+func (this *GiftCodeshandler) CreateGiftCodes(giftCodes *model.GiftCodes) model.Result {
 	giftCodes.GiftCode = new(utils2.RandomCode).RandomString()
 	giftCodes.CreateTime = time.Now().Unix()
 	giftCodes.GiftPulledNum = 0
 	giftService := service.GiftCodesService{}
-	_, valErr := giftService.ValPullNum(giftCodes)
-	if valErr != nil {
-		return false, valErr
+	result := giftService.ValPullNum(giftCodes)
+	var valErr model.Result
+	if result != valErr {
+		return result
 	}
 	jsonStr, err := json.Marshal(giftCodes)
 	if err != nil {
-		return false, err
+		return model.Result{Code: "212", Msg: "后台数据序列化出错", Data: nil}
 	}
 
 	r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
 	if r != nil {
-		return false, r
+		return model.Result{Code: "213", Msg: "redis存储失败", Data: nil}
 	}
-	return true, nil
+	return model.Result{Code: "200", Msg: "成功", Data: giftCodes.GiftCode}
 }
 
-func (this *GiftCodeshandler) GetCiftCodes(giftCode string) (*model.GiftCodes, error) {
+/**
+获取礼品码信息业务处理
+*/
+func (this *GiftCodeshandler) GetCiftCodes(giftCode string) model.Result {
 	result, r := utils2.StringPull(giftCode)
 	if r != nil {
-		return nil, r
+		if r == redis.Nil {
+			return model.Result{Code: "214", Msg: "redis中不存在该礼品码", Data: nil}
+		} else {
+			return model.Result{Code: "215", Msg: "redis获取数据失败", Data: nil}
+		}
+
 	}
 	giftCodes := &model.GiftCodes{}
-	json.Unmarshal([]byte(result), giftCodes)
-	return giftCodes, nil
-}
-
-func (this *GiftCodeshandler) ActivateCode(giftCode string, userId string) ([]model.Gifts, error) {
-	//先验证验证码是否存在
-	giftCodes := &model.GiftCodes{}
-	result, r := utils2.StringPull(giftCode)
-	if r != nil {
-		return nil, r
-	}
-
-	json.Unmarshal([]byte(result), giftCodes)
-	//先验证礼品码是否过期
-	CurrentTime := time.Now().Unix()
-
-	if CurrentTime > giftCodes.Validity {
-		return nil, errors.New("该礼品码已过期")
-	}
-	//验证验证码是哪一类验证码
-	if giftCodes.GiftCodeType == "A" {
-		//查看限制人
-		if giftCodes.GiftPullUser == userId {
-			//查看可领取次数
-			if giftCodes.GiftPullNum >= 1 {
-				//领取
-				giftCodes.GiftPullNum -= 1
-				giftCodes.GiftPulledNum += 1
-				list := giftCodes.RecordList
-				m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-				list = append(list, m1)
-
-				giftCodes.RecordList = list
-
-				jsonStr, err := json.Marshal(giftCodes)
-				if err != nil {
-					return nil, errors.New("存储数据序列化出问题")
-				}
-				r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-				if r != nil {
-					return nil, r
-				}
-				return giftCodes.GiftList, nil
-			} else {
-				//已领取过
-				return nil, errors.New("该激活码已被领取")
-			}
-
-		} else {
-			//不是该领取码的限制人
-			return nil, errors.New("你不可使用该激活码")
-		}
-	} else if giftCodes.GiftCodeType == "B" {
-		//不限用户  不限次数，用户是否用过
-		//先判断可领次数是否可以领取
-		//领取礼品
-		if giftCodes.GiftPullNum > 0 {
-			records := giftCodes.RecordList
-			if len(records) <= 0 {
-				//没有领取记录，则增加一条领取记录
-				//可以领取礼品
-				//增加领取记录
-				//领取
-				giftCodes.GiftPullNum -= 1
-				giftCodes.GiftPulledNum += 1
-				list := giftCodes.RecordList
-				m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-				list = append(list, m1)
-
-				giftCodes.RecordList = list
-
-				jsonStr, err := json.Marshal(giftCodes)
-				if err != nil {
-					return nil, errors.New("存储数据序列化出问题")
-				}
-				r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-				if r != nil {
-					return nil, r
-				}
-				return giftCodes.GiftList, nil
-			} else {
-				//有领取记录 使用查看是否领取过
-				for i, v := range records {
-					if v.Userid == userId {
-						//领取列表存在该用户领取记录
-						return nil, errors.New("你已经领取该礼品码")
-						break
-					}
-					if i == len(records)-1 {
-						//可以领取礼品
-						//增加领取记录
-						//领取
-						giftCodes.GiftPullNum -= 1
-						giftCodes.GiftPulledNum += 1
-						list := giftCodes.RecordList
-						m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-						list = append(list, m1)
-						giftCodes.RecordList = list
-
-						jsonStr, err := json.Marshal(giftCodes)
-						if err != nil {
-							return nil, errors.New("存储数据序列化出问题")
-						}
-						r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-						if r != nil {
-							return nil, r
-						}
-						return giftCodes.GiftList, nil
-
-					}
-				}
-
-			}
-
-		} else {
-			return nil, errors.New("该礼品码已被领取完")
-		}
-
-	} else if giftCodes.GiftCodeType == "C" {
-		records := giftCodes.RecordList
-		if len(records) <= 0 {
-			//没有领取记录，则增加一条领取记录
-			//可以领取礼品
-			//增加领取记录
-			//领取
-
-			giftCodes.GiftPulledNum += 1
-			list := giftCodes.RecordList
-			m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-			list = append(list, m1)
-
-			giftCodes.RecordList = list
-			jsonStr, err := json.Marshal(giftCodes)
-			if err != nil {
-				return nil, errors.New("存储数据序列化出问题")
-			}
-			r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-			if r != nil {
-				return nil, r
-			}
-			return giftCodes.GiftList, nil
-		} else {
-			//有领取记录 使用查看是否领取过
-			for i, v := range records {
-				if v.Userid == userId {
-					//领取列表存在该用户领取记录
-					return nil, errors.New("你已经领取该礼品码")
-					break
-				}
-				if i == len(records)-1 {
-					//可以领取礼品
-					//增加领取记录
-					//领取
-
-					giftCodes.GiftPulledNum += 1
-					list := giftCodes.RecordList
-					m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-					list = append(list, m1)
-					giftCodes.RecordList = list
-					jsonStr, err := json.Marshal(giftCodes)
-					if err != nil {
-						return nil, errors.New("存储数据序列化出问题")
-					}
-					r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-					if r != nil {
-						return nil, r
-					}
-					return giftCodes.GiftList, nil
-
-				}
-			}
-
-		}
-
-	}
-	return nil, errors.New("礼品码无效")
-}
-
-func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([]byte, error) {
-	//先验证用户是否存在
-	currntUser := &model.Users{}
-	collection := utils2.GetCollection()
-	filter := bson.M{"id": userId}
-	cursor, err := collection.Find(context.TODO(), filter, options.Find().SetSkip(0), options.Find().SetLimit(10))
+	err := json.Unmarshal([]byte(result), giftCodes)
 	if err != nil {
-		log.Fatal(err)
+		return model.Result{Code: "202", Msg: "后台反序列化出错", Data: nil}
+	}
+	return model.Result{Code: "200", Msg: "成功", Data: giftCodes}
+}
+
+func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) []byte {
+	//先验证用户是否存在
+	collection := utils2.GetCollection()
+	/*currntUser := &model.Users{}
+
+	client :=utils2.GetRedisClient()*/
+	filter := bson.M{"id": userId}
+	cursor, err := collection.Find(context.TODO(), filter)
+	if err != nil {
+		log.Println(err)
+		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 226, Msg: "mongodb查询失败"})
+		return bytes
 	}
 	//延迟关闭游标
 	defer func() {
 		if err = cursor.Close(context.TODO()); err != nil {
-			log.Fatal(err)
+			log.Println(err)
+
 		}
 	}()
 
 	var results []model.Users
 	if err = cursor.All(context.TODO(), &results); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	if len(results) <= 0 {
-		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 201, Msg: "用户没有注册登陆"})
-		return bytes, errors.New("该用户没有注册登陆")
+		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 225, Msg: "用户没有注册登陆"})
+		return bytes
 	}
 
 	//先验证验证码是否存在
 	giftCodes := &model.GiftCodes{}
 	result, r := utils2.StringPull(giftCode)
 	if r != nil {
+		if r == redis.Nil {
+			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 214, Msg: "redis中不存在该礼品码"})
+			return bytes
+		} else {
+			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 215, Msg: "redis获取数据失败"})
+			return bytes
+		}
 
-		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 202, Msg: "礼品码不存在"})
-		return bytes, r
 	}
 
 	json.Unmarshal([]byte(result), giftCodes)
@@ -262,8 +113,8 @@ func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([
 	CurrentTime := time.Now().Unix()
 
 	if CurrentTime > giftCodes.Validity {
-		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 203, Msg: "该礼品码已过期"})
-		return bytes, errors.New("该礼品码已过期")
+		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 216, Msg: "该礼品码已过期"})
+		return bytes
 	}
 	//验证验证码是哪一类验证码
 	if giftCodes.GiftCodeType == "A" {
@@ -272,59 +123,18 @@ func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([
 			//查看可领取次数
 			if giftCodes.GiftPullNum >= 1 {
 				//领取
-				giftCodes.GiftPullNum -= 1
-				giftCodes.GiftPulledNum += 1
-				list := giftCodes.RecordList
-				m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-				list = append(list, m1)
-
-				giftCodes.RecordList = list
-
-				jsonStr, err := json.Marshal(giftCodes)
-				if err != nil {
-					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 204, Msg: "redis存储数据有问题"})
-					return bytes, errors.New("存储数据序列化出问题")
-				}
-				r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-				if r != nil {
-					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 205, Msg: "礼品码领取过程出问题"})
-					return bytes, r
-				}
-				reward := model.GeneralReward{}
-				reward.Code = 200
-				reward.Msg = giftCodes.GiftDescribe
-				reward.Changes = make(map[uint32]uint64)
-				reward.Balance = make(map[uint32]uint64)
-				reward.Counter = make(map[uint32]uint64)
-				for _, v := range giftCodes.GiftList {
-					if v.ID == 1001 || v.ID == 1002 { //金币  钻石
-						reward.Changes[uint32(v.ID)] = uint64(v.Num)
-					}
-
-				}
-				reward.Balance[1001] = uint64(results[0].GoldNum)
-				reward.Balance[1002] = uint64(results[0].JewelNum)
-
-				reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
-				reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
-				currntUser.Id = results[0].Id
-				currntUser.UID = results[0].UID
-				currntUser.GoldNum = int(reward.Counter[1001])
-				currntUser.JewelNum = int(reward.Counter[1002])
-				userService := service.UserService{}
-				userService.UpdateUsers(currntUser)
-				bytes, _ := proto.Marshal(&reward)
-				return bytes, nil
+				byte := UpdateGift(giftCodes, userId, results[0])
+				return byte
 			} else {
 				//已领取过
-				bytes, _ := proto.Marshal(&model.GeneralReward{Code: 206, Msg: "礼品码已被领取"})
-				return bytes, errors.New("该礼品码已被领取")
+				bytes, _ := proto.Marshal(&model.GeneralReward{Code: 217, Msg: "礼品码已领取"})
+				return bytes
 			}
 
 		} else {
 			//不是该领取码的限制人
-			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 207, Msg: "不可使用该礼品码"})
-			return bytes, errors.New("你不可使用该礼品码")
+			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 218, Msg: "你不可使用该礼品码"})
+			return bytes
 		}
 	} else if giftCodes.GiftCodeType == "B" {
 		//不限用户  不限次数，用户是否用过
@@ -336,106 +146,23 @@ func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([
 				//没有领取记录，则增加一条领取记录
 				//可以领取礼品
 				//增加领取记录
-				//领取
-				giftCodes.GiftPullNum -= 1
-				giftCodes.GiftPulledNum += 1
-				list := giftCodes.RecordList
-				m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-				list = append(list, m1)
-
-				giftCodes.RecordList = list
-
-				jsonStr, err := json.Marshal(giftCodes)
-				if err != nil {
-					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 204, Msg: "redis存储数据有问题"})
-					return bytes, errors.New("存储数据序列化出问题")
-				}
-				r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-				if r != nil {
-					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 205, Msg: "礼品码领取过程出问题"})
-					return bytes, r
-				}
-
-				reward := model.GeneralReward{}
-				reward.Code = 200
-				reward.Msg = giftCodes.GiftDescribe
-				reward.Changes = make(map[uint32]uint64)
-				reward.Balance = make(map[uint32]uint64)
-				reward.Counter = make(map[uint32]uint64)
-				for _, v := range giftCodes.GiftList {
-					if v.ID == 1001 || v.ID == 1002 { //金币  钻石
-						reward.Changes[uint32(v.ID)] = uint64(v.Num)
-					}
-
-				}
-				reward.Balance[1001] = uint64(results[0].GoldNum)
-				reward.Balance[1002] = uint64(results[0].JewelNum)
-
-				reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
-				reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
-				currntUser.Id = results[0].Id
-				currntUser.UID = results[0].UID
-				currntUser.GoldNum = int(reward.Counter[1001])
-				currntUser.JewelNum = int(reward.Counter[1002])
-				userService := service.UserService{}
-				userService.UpdateUsers(currntUser)
-				bytes, _ := proto.Marshal(&reward)
-				return bytes, nil
+				byte := UpdateGift(giftCodes, userId, results[0])
+				return byte
 			} else {
 				//有领取记录 使用查看是否领取过
 				for i, v := range records {
 					if v.Userid == userId {
 						//领取列表存在该用户领取记录
-						bytes, _ := proto.Marshal(&model.GeneralReward{Code: 206, Msg: "礼品码已被领取"})
-						return bytes, errors.New("你已经领取该礼品码")
+						bytes, _ := proto.Marshal(&model.GeneralReward{Code: 219, Msg: "礼品码已领取"})
+						return bytes
 						break
 					}
 					if i == len(records)-1 {
 						//可以领取礼品
 						//增加领取记录
 						//领取
-						giftCodes.GiftPullNum -= 1
-						giftCodes.GiftPulledNum += 1
-						list := giftCodes.RecordList
-						m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-						list = append(list, m1)
-						giftCodes.RecordList = list
-
-						jsonStr, err := json.Marshal(giftCodes)
-						if err != nil {
-							bytes, _ := proto.Marshal(&model.GeneralReward{Code: 204, Msg: "redis存储数据有问题"})
-							return bytes, errors.New("存储数据序列化出问题")
-						}
-						r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-						if r != nil {
-							bytes, _ := proto.Marshal(&model.GeneralReward{Code: 205, Msg: "礼品码领取过程出问题"})
-							return bytes, r
-						}
-						reward := model.GeneralReward{}
-						reward.Code = 200
-						reward.Msg = giftCodes.GiftDescribe
-						reward.Changes = make(map[uint32]uint64)
-						reward.Balance = make(map[uint32]uint64)
-						reward.Counter = make(map[uint32]uint64)
-						for _, v := range giftCodes.GiftList {
-							if v.ID == 1001 || v.ID == 1002 { //金币  钻石
-								reward.Changes[uint32(v.ID)] = uint64(v.Num)
-							}
-
-						}
-						reward.Balance[1001] = uint64(results[0].GoldNum)
-						reward.Balance[1002] = uint64(results[0].JewelNum)
-
-						reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
-						reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
-						currntUser.Id = results[0].Id
-						currntUser.UID = results[0].UID
-						currntUser.GoldNum = int(reward.Counter[1001])
-						currntUser.JewelNum = int(reward.Counter[1002])
-						userService := service.UserService{}
-						userService.UpdateUsers(currntUser)
-						bytes, _ := proto.Marshal(&reward)
-						return bytes, nil
+						byte := UpdateGift(giftCodes, userId, results[0])
+						return byte
 
 					}
 				}
@@ -443,8 +170,8 @@ func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([
 			}
 
 		} else {
-			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 208, Msg: "该礼品码已被领取完"})
-			return bytes, errors.New("该礼品码已被领取完")
+			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 219, Msg: "该礼品码已被领取完"})
+			return bytes
 		}
 
 	} else if giftCodes.GiftCodeType == "C" {
@@ -454,109 +181,101 @@ func (this *GiftCodeshandler) ActivateCodeNew(giftCode string, userId string) ([
 			//可以领取礼品
 			//增加领取记录
 			//领取
-
-			giftCodes.GiftPulledNum += 1
-			list := giftCodes.RecordList
-			m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-			list = append(list, m1)
-
-			giftCodes.RecordList = list
-			jsonStr, err := json.Marshal(giftCodes)
-			if err != nil {
-				bytes, _ := proto.Marshal(&model.GeneralReward{Code: 204, Msg: "redis存储数据有问题"})
-				return bytes, errors.New("存储数据序列化出问题")
-			}
-			r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-			if r != nil {
-				bytes, _ := proto.Marshal(&model.GeneralReward{Code: 205, Msg: "礼品码领取过程出问题"})
-				return bytes, r
-			}
-
-			reward := model.GeneralReward{}
-			reward.Code = 200
-			reward.Msg = giftCodes.GiftDescribe
-			reward.Changes = make(map[uint32]uint64)
-			reward.Balance = make(map[uint32]uint64)
-			reward.Counter = make(map[uint32]uint64)
-			for _, v := range giftCodes.GiftList {
-				if v.ID == 1001 || v.ID == 1002 { //金币  钻石
-					reward.Changes[uint32(v.ID)] = uint64(v.Num)
-				}
-
-			}
-			reward.Balance[1001] = uint64(results[0].GoldNum)
-			reward.Balance[1002] = uint64(results[0].JewelNum)
-
-			reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
-			reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
-			currntUser.Id = results[0].Id
-			currntUser.UID = results[0].UID
-			currntUser.GoldNum = int(reward.Counter[1001])
-			currntUser.JewelNum = int(reward.Counter[1002])
-			userService := service.UserService{}
-			userService.UpdateUsers(currntUser)
-			bytes, _ := proto.Marshal(&reward)
-			return bytes, nil
+			byte := UpdateGift(giftCodes, userId, results[0])
+			return byte
 		} else {
 			//有领取记录 使用查看是否领取过
 			for i, v := range records {
 				if v.Userid == userId {
 					//领取列表存在该用户领取记录
-					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 206, Msg: "礼品码已被领取"})
-					return bytes, errors.New("你已经领取该礼品码")
+					bytes, _ := proto.Marshal(&model.GeneralReward{Code: 217, Msg: "礼品码已领取"})
+					return bytes
 					break
 				}
 				if i == len(records)-1 {
 					//可以领取礼品
 					//增加领取记录
 					//领取
-
-					giftCodes.GiftPulledNum += 1
-					list := giftCodes.RecordList
-					m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2021-03-04 15:04:05")}
-					list = append(list, m1)
-					giftCodes.RecordList = list
-					jsonStr, err := json.Marshal(giftCodes)
-					if err != nil {
-						bytes, _ := proto.Marshal(&model.GeneralReward{Code: 204, Msg: "redis存储数据有问题"})
-						return bytes, errors.New("存储数据序列化出问题")
-					}
-					r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
-					if r != nil {
-						bytes, _ := proto.Marshal(&model.GeneralReward{Code: 205, Msg: "礼品码领取过程出问题"})
-						return bytes, r
-					}
-					reward := model.GeneralReward{}
-					reward.Code = 200
-					reward.Msg = giftCodes.GiftDescribe
-					reward.Changes = make(map[uint32]uint64)
-					reward.Balance = make(map[uint32]uint64)
-					reward.Counter = make(map[uint32]uint64)
-					for _, v := range giftCodes.GiftList {
-						if v.ID == 1001 || v.ID == 1002 { //金币  钻石
-							reward.Changes[uint32(v.ID)] = uint64(v.Num)
-						}
-
-					}
-					reward.Balance[1001] = uint64(results[0].GoldNum)
-					reward.Balance[1002] = uint64(results[0].JewelNum)
-
-					reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
-					reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
-					currntUser.Id = results[0].Id
-					currntUser.UID = results[0].UID
-					currntUser.GoldNum = int(reward.Counter[1001])
-					currntUser.JewelNum = int(reward.Counter[1002])
-					userService := service.UserService{}
-					userService.UpdateUsers(currntUser)
-					bytes, _ := proto.Marshal(&reward)
-					return bytes, nil
+					byte := UpdateGift(giftCodes, userId, results[0])
+					return byte
 				}
 			}
 
 		}
 
 	}
-	bytes, _ := proto.Marshal(&model.GeneralReward{Code: 209, Msg: "礼品码无效"})
-	return bytes, errors.New("礼品码无效")
+	bytes, _ := proto.Marshal(&model.GeneralReward{Code: 220, Msg: "礼品码无效"})
+	return bytes
+}
+
+func UpdateGift(giftCodes *model.GiftCodes, userId string, user model.Users) []byte {
+	currntUser := &model.Users{}
+
+	client := utils2.GetRedisClient()
+
+	//redis事务开始
+	// 开启一个TxPipeline事务
+	pipe := client.TxPipeline()
+
+	// 执行事务操作，可以通过pipe读写redis
+	_ = pipe.Incr("tx_pipeline_counter")
+	pipe.Expire("tx_pipeline_counter", time.Hour)
+	if giftCodes.GiftCodeType == "C" {
+
+	} else {
+		giftCodes.GiftPullNum -= 1
+	}
+
+	giftCodes.GiftPulledNum += 1
+	list := giftCodes.RecordList
+	m1 := model.Record{Userid: userId, PullTime: time.Now().Unix(), PullTimeStr: time.Now().Format("2006-01-02 15:04:05")}
+	list = append(list, m1)
+	giftCodes.RecordList = list
+
+	jsonStr, err := json.Marshal(giftCodes)
+	if err != nil {
+		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 223, Msg: "protobuf序列化出错"})
+		return bytes
+	}
+	r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
+	userService := service.UserService{}
+	reward := model.GeneralReward{}
+	reward.Code = 200
+	reward.Msg = "成功"
+	reward.Changes = make(map[uint32]uint64)
+	reward.Balance = make(map[uint32]uint64)
+	reward.Counter = make(map[uint32]uint64)
+	for _, v := range giftCodes.GiftList {
+		if v.ID == 1001 || v.ID == 1002 { //金币  钻石
+			reward.Changes[uint32(v.ID)] = uint64(v.Num)
+		}
+
+	}
+	reward.Balance[1001] = uint64(user.GoldNum)
+	reward.Balance[1002] = uint64(user.JewelNum)
+	reward.Counter[1001] = reward.Changes[1001] + reward.Balance[1001]
+	reward.Counter[1002] = reward.Changes[1002] + reward.Balance[1002]
+	currntUser.Id = user.Id
+	currntUser.UID = user.UID
+	currntUser.GoldNum = int(reward.Counter[1001])
+	currntUser.JewelNum = int(reward.Counter[1002])
+
+	bytes, _ := proto.Marshal(&reward)
+
+	if r == nil {
+		r2 := userService.UpdateUsers(currntUser)
+		if r2 == nil {
+			//提交事务
+			_, _ = pipe.Exec()
+			log.Println("提交事务")
+			return bytes
+		} else {
+			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 224, Msg: "mongodb更新失败"})
+			return bytes
+		}
+
+	} else {
+		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 213, Msg: "redis存储失败"})
+		return bytes
+	}
 }

@@ -2,30 +2,26 @@ package ctrl
 
 import (
 	"ThirdProject/internal/handler"
+	"ThirdProject/internal/model"
 	"github.com/gin-gonic/gin"
 )
 
+/**
+centroller层
+*/
 type UsersController struct {
 }
 
 func (this *UsersController) RegisterUser() gin.HandlerFunc {
 	return func(context *gin.Context) {
 		id, _ := context.GetPostForm("id")
-		userHandler := handler.UsersHandler{}
-		user, err := userHandler.RegisterUser(id)
-		if err != nil {
-			context.JSON(200, map[string]interface{}{
-				"code":    201,
-				"message": "ERROR",
-				"data":    err.Error(),
-			})
-		} else {
-			context.JSON(200, map[string]interface{}{
-				"code":    200,
-				"message": "OK",
-				"data":    user,
-			})
+
+		if id == "" || id == " " {
+			context.JSON(200, model.Result{Code: "201", Msg: "用户唯一标识不能为空"})
 		}
+		userHandler := handler.UsersHandler{}
+		result := userHandler.RegisterUser(id)
+		context.JSON(200, result)
 	}
 
 }
