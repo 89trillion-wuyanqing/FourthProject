@@ -12,7 +12,7 @@ var (
 	collection *mongo.Collection
 )
 
-func InitMongodb() {
+func init() {
 	var err error
 	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
 
@@ -30,9 +30,7 @@ func InitMongodb() {
 
 //暴露获取mongodb连接，单例模式
 func GetMgoCli() *mongo.Client {
-	if mgoCli == nil {
-		InitMongodb()
-	}
+
 	return mgoCli
 }
 

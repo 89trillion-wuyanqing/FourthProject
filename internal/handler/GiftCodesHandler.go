@@ -270,11 +270,13 @@ func UpdateGift(giftCodes *model.GiftCodes, userId string, user model.Users) []b
 			log.Println("提交事务")
 			return bytes
 		} else {
+			pipe.Discard()
 			bytes, _ := proto.Marshal(&model.GeneralReward{Code: 224, Msg: "mongodb更新失败"})
 			return bytes
 		}
 
 	} else {
+		pipe.Discard()
 		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 213, Msg: "redis存储失败"})
 		return bytes
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis"
+	"log"
 	"time"
 )
 
@@ -11,7 +12,7 @@ import (
 var rdb *redis.Client
 
 // 初始化连接
-func InitClient() error {
+func init() {
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
@@ -20,16 +21,12 @@ func InitClient() error {
 	fmt.Println("连接")
 	_, err := rdb.Ping().Result()
 	if err != nil {
-		return errors.New("redis服务器连接失败")
+		log.Fatal("redis连接失败")
 	}
-
-	return nil
 }
 
 func GetRedisClient() *redis.Client {
-	if rdb == nil {
-		InitClient()
-	}
+
 	return rdb
 }
 
