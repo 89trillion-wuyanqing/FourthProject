@@ -237,7 +237,8 @@ func UpdateGift(giftCodes *model.GiftCodes, userId string, user model.Users) []b
 		bytes, _ := proto.Marshal(&model.GeneralReward{Code: 223, Msg: "protobuf序列化出错"})
 		return bytes
 	}
-	r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
+	r := pipe.Set(giftCodes.GiftCode, string(jsonStr), 0).Err()
+	//r := utils2.StringPush(giftCodes.GiftCode, string(jsonStr), 0)
 	userService := service.UserService{}
 	reward := model.GeneralReward{}
 	reward.Code = 200
