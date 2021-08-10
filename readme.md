@@ -7,38 +7,37 @@
 ```
 ├── app
 │   ├── http
-│   │   └── httpServer.go
-│   └── main.go
-├── config
+│   │   └── httpServer.go #http服务
+│   └── main.go #程序入口
+├── config #配置文件
 │   └── app.ini
 ├── go.mod
-├── go.sum
 ├── internal
-│   ├── ctrl
+│   ├── ctrl #控制器层
 │   │   ├── GiftCodesController.go
 │   │   └── UsersController.go
-│   ├── handler
+│   ├── handler #handler层
 │   │   ├── GiftCodesHandler.go
 │   │   ├── GiftCodesHandler_test.go
 │   │   ├── UsersHandler.go
 │   │   └── Usershandler_test.go
-│   ├── model
+│   ├── model #模型层
 │   │   ├── GeneralReward.pb.go
 │   │   ├── GeneralReward.proto
 │   │   ├── Gift.go
 │   │   ├── Result.go
 │   │   └── Users.go
-│   ├── router
+│   ├── router #路由层
 │   │   └── GiftCodesRouter.go
-│   ├── service
+│   ├── service #service层
 │   │   ├── GiftCodesService.go
 │   │   └── UserService.go
-│   └── utils
+│   └── utils #工具层
 │       ├── IniUtils.go
 │       ├── MongodbUtils.go
 │       ├── RedisUtils.go
 │       └── random.go
-├── locust
+├── locust #压力测试
 │   ├── LocustFile.py
 │   └── report_1627906730.423639.html
 └── readme.md
