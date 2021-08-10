@@ -136,7 +136,7 @@ POST
 
 #### 请求路径
 
-http://localhost:8000/registerUser
+localhost:8000/registerUser
 
 #### 请求参数
 
@@ -180,7 +180,7 @@ POST
 
 #### 请求路径
 
-http://localhost:8000/createGiftCodes
+localhost:8000/createGiftCodes
 
 #### 请求参数
 
@@ -226,7 +226,7 @@ POST
 
 #### 请求路径
 
-http://localhost:8000/getCiftCodes
+localhost:8000/getCiftCodes
 
 #### 请求参数
 
@@ -295,7 +295,7 @@ POST
 
 #### 请求路径
 
-http://localhost:8000/activateCode
+localhost:8000/activateCode
 
 #### 请求参数
 
